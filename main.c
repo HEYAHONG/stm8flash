@@ -1,13 +1,16 @@
 /* stlink/v2 stm8 memory programming utility
    (c) Valentin Dudouyt, 2012 - 2014 */
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <unistd.h>
 #include <stdbool.h>
 #include <assert.h>
+
+#include <unistd.h>
+
 #include "pgm.h"
 #include "espstlink.h"
 #include "stlink.h"
@@ -36,6 +39,7 @@ extern int optreset;
 
 programmer_t pgms[] = {
 	{ 	"stlink",
+		STLinkV1,
 		0x0483, // USB vid
 		0x3744, // USB pid
 		stlink_open,
@@ -46,6 +50,7 @@ programmer_t pgms[] = {
 	},
 	{
 		"stlinkv2",
+		STLinkV2,
 		0x0483,
 		0x3748,
 		stlink2_open,
@@ -54,8 +59,31 @@ programmer_t pgms[] = {
 		stlink2_swim_read_range,
 		stlink2_swim_write_range,
 	},
-    {
+	{
+		"stlinkv21",
+		STLinkV21,
+		0x0483,
+		0x374b,
+		stlink2_open,
+		stlink_close,
+		stlink2_srst,
+		stlink2_swim_read_range,
+		stlink2_swim_write_range,
+	},
+	{
+		"stlinkv3",
+		STLinkV3,
+		0x0483,
+		0x374f,
+		stlink2_open,
+		stlink_close,
+		stlink2_srst,
+		stlink2_swim_read_range,
+		stlink2_swim_write_range,
+	},
+	{
 		"espstlink",
+		ESP_STLink,
 		0,
 		0,
 		espstlink_pgm_open,
@@ -68,11 +96,27 @@ programmer_t pgms[] = {
 };
 
 void print_help_and_exit(const char *name, bool err) {
+	int i = 0;
 	FILE *stream = err ? stderr : stdout;
 	fprintf(stream, "Usage: %s [-c programmer] [-S serialno] [-p partno] [-s memtype] [-b bytes] [-r|-w|-v] <filename>\n", name);
 	fprintf(stream, "Options:\n");
 	fprintf(stream, "\t-?             Display this help\n");
-	fprintf(stream, "\t-c programmer  Specify programmer used (stlink, stlinkv2 or espstlink)\n");
+	fprintf(stream, "\t-c programmer  Specify programmer used (");
+	while (1) {
+		if (pgms[i].name == NULL)
+			break;
+
+		if (i) {
+			if (pgms[i+1].name == NULL)
+				fprintf(stream, " or ");
+			else
+				fprintf(stream, ", ");
+		}
+
+		fprintf(stream, "%s", pgms[i].name);
+		i++;
+	}
+	fprintf(stream, ")\n");
 	fprintf(stream, "\t-S serialno    Specify programmer's serial number. If not given and more than one programmer is available, they'll be listed.\n");
 	fprintf(stream, "\t-d port        Specify the serial device for espstlink (default: /dev/ttyUSB0)\n");
 	fprintf(stream, "\t-p partno      Specify STM8 device\n");
@@ -238,7 +282,7 @@ const stm8_device_t *get_part(const char *name)
 	{
 		const char *e = stm8_devices[i].name;
 		const char *s = name;
-		for(e = stm8_devices[i].name, s = name; *s && (*e == *s || *e == '?'); e++, s++);
+		for(e = stm8_devices[i].name, s = name; *s && (*e == *s || toupper(*e) == *s || *e == '?'); e++, s++);
 		if(!*e)
 			return(&stm8_devices[i]);
 	}
@@ -449,7 +493,7 @@ int main(int argc, char **argv) {
 			fprintf(stderr, "\r\nRequested %d bytes but received only %d.\r\n", bytes_count_align, recv);
 			spawn_error("Failed to read MCU");
 		}
-		if(!(f = fopen(filename, "w")))
+		if(!(f = fopen(filename, (fileformat == RAW_BINARY) ? "wb" : "w")))
 			spawn_error("Failed to open file");
 		switch(fileformat)
 		{
@@ -478,7 +522,7 @@ int main(int argc, char **argv) {
 			spawn_error("Failed to read MCU");
 		}
 
-		if(!(f = fopen(filename, "r")))
+		if(!(f = fopen(filename, (fileformat == RAW_BINARY) ? "rb" : "r")))
 			spawn_error("Failed to open file");
 		unsigned char *buf2 = malloc(bytes_count);
 		if(!buf2) spawn_error("malloc failed");
@@ -514,7 +558,7 @@ int main(int argc, char **argv) {
 
 
 	} else if (action == WRITE) {
-		if(!(f = fopen(filename, "r")))
+		if(!(f = fopen(filename, (fileformat == RAW_BINARY) ? "rb" : "r")))
 			spawn_error("Failed to open file");
 		int bytes_count_align = ((bytes_count-1)/part->flash_block_size+1)*part->flash_block_size;
 		unsigned char *buf = malloc(bytes_count_align);
